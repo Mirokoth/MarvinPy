@@ -162,6 +162,14 @@ async def on_message(message):
 
             if "BURN" in command:
                 await client.send_message(message.channel, "https://en.wikipedia.org/wiki/List_of_burn_centres_in_Australia")
+            if "GOT" in command:
+                c.execute("SELECT * FROM got_fantasy ORDER BY ID")
+                em = discord.Embed(title=" ", description=" ", colour=0x282B30)
+                em.set_author(name="GOT Fantasy Score", icon_url="https://cdn.discordapp.com/avatars/289679232957939712/5f4f22e586f029ca3e155d3a06a73181.png")
+                for row in c.fetchall():
+                    print("row:{}".format(row))
+                    em.add_field(name="{} - {}".format(row[1], row[2]), value="Score: {}".format(row[3]), inline=True)
+                await client.send_message(message.channel, embed=em)
 
             if "GDQ" in command:
                 with open('gdq.json') as data_file:
@@ -479,6 +487,7 @@ def create_table():
     c.execute('CREATE TABLE IF NOT EXISTS REDDIT(URL TEXT, LASTRUN TEXT, JSON TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS OZALERT(ALERT TEXT, USER TEXT, ALERTED TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS OZBARGAIN(ID INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, TITLE TEXT NOT NULL, URL TEXT NOT NULL)')
+    c.execute('CREATE TABLE IF NOT EXISTS got_fantasy(ID INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, POSITION INTEGER NOT NULL, NAME TEXT NOT NULL, SCORE INTEGER)')
     c.execute('CREATE TABLE IF NOT EXISTS user_count(server TEXT, poster TEXT, post_count INTEGER)')
     c.execute('CREATE TABLE IF NOT EXISTS file_count(server TEXT, poster TEXT, post_count INTEGER, size INTEGER, height INTEGER, width INTEGER)')
 
@@ -663,12 +672,63 @@ async def ozbargain():
             print(e)
             continue
 
+    # c.execute('CREATE TABLE IF NOT EXISTS got_fantasy(ID INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, POSITION INTEGER NOT NULL, NAME TEXT NOT NULL, SCORE INTEGER)')
+async def got_fantasy():
+    print("Running got_fantasy loop")
+    while not client.is_closed:
+        if len(list(client.servers)) > 0:
+            print(list(client.servers))
+            # try:
+            header = {'User-Agent':'Marvin'}
+            response = requests.get('http://www.fantasizr.com/league/6414468407885824', headers=header, timeout=240)
+
+            response = BeautifulSoup(response.content, 'html')
+            responseresults = response.findAll('table')
+            responseresults = responseresults[0].findAll('tr')
+            table = []
+            result_change = False
+            for row in responseresults:
+                out = row.findAll('td')
+                if len(out) != 0:
+                    out[0] = out[0].text
+                    out[1] = BeautifulSoup(str(out[1]).split('<font')[0], 'html').text
+                    out[2] = out[2].text
+                    table += [out]
+                    c.execute("SELECT * FROM got_fantasy WHERE NAME=(?)", (out[1],))
+                    if c.fetchone() == None:
+                        print(c.fetchone())
+                        c.execute("INSERT INTO got_fantasy (POSITION,NAME,SCORE) VALUES (?,?,?)",(out[0],out[1],out[2]))
+                        conn.commit()
+                    c.execute("SELECT * FROM got_fantasy WHERE NAME=(?)", (out[1],))
+                    if str(c.fetchone()[3]) != out[2]:
+                    # if str(1) != out[2]:
+                        print("Missmatch: {} and {}".format(str(c.fetchone()[3]), out[2]))
+                        result_change = True
+            if result_change == True:
+                print(client.servers)
+                c.execute("SELECT * FROM got_fantasy ORDER BY ID")
+                em = discord.Embed(title=" ", description=" ", colour=0x282B30)
+                em.set_author(name="New GOT Fantasy Score", icon_url="https://cdn.discordapp.com/avatars/289679232957939712/5f4f22e586f029ca3e155d3a06a73181.png")
+                for row in c.fetchall():
+                    print("row:{}".format(row))
+                    em.add_field(name="{} - {}".format(row[1], row[2]), value="Score: {}".format(row[3]), inline=True)
+
+                await client.send_message(list(client.servers)[0], embed=em)
+            print(table)
+            await asyncio.sleep(90)
+            # except Exception as exception:
+            #     print(exception)
+        else:
+            await asyncio.sleep(10)
+
+
 
 create_table()
 read_from_db()
 client.loop.create_task(poll_background())
 client.loop.create_task(create_command())
 client.loop.create_task(ozbargain())
+client.loop.create_task(got_fantasy())
 # Marvin:
 client.run('API')
 # Test Bot:
